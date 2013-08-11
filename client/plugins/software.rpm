@@ -16,25 +16,20 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import json
-import os
+import rpm
 import sys
 
 data = {}
 
 try:
-    with os.popen("which rpm 2>/dev/null") as f:
-        rpm = f.read().strip()
-    
-    with os.popen("%s -qa" % rpm) as f:
-        for line in f:
-            line = line.strip()
-            try:
-                # Epoch?
-                name, tag, arch = line.rsplit('.', 2)
-                name, ver, rel = name.rsplit('-', 2)
-                data[name] = [ver, rel, tag, arch]
-            except ValueError:
-                continue
+    ts = rpm.TransactionSet()
+    mi = ts.dbMatch()
+    for h in mi:
+        nevra = "%s-%s:%s-%s.%s" % (h['name'], h['epoch'], h['version'], h['release'], h['arch'])
+        entry = {}
+        for key in ['name','epoch','version','release','arch']:
+            entry[key] = h[key]
+        data[nevra] = entry
 except IOError:
     pass
 
