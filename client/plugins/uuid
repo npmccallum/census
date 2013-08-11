@@ -22,6 +22,7 @@ import sys
 
 UUID_DIR = "/var/lib/census"
 UUID_FILE = os.path.join(UUID_DIR, "uuid")
+MACHINEID_FILE = "/etc/machine-id"
 
 if not os.path.isdir(UUID_DIR):
     os.mkdir(UUID_DIR)
@@ -41,6 +42,18 @@ try:
     os.close(fd)
 except OSError:
     pass
-    
-with open(UUID_FILE) as f:
-    print(json.dumps({"uuid": f.read()}))
+
+data = {}
+try:
+    with open(UUID_FILE) as f:
+        data["uuid"] = f.read().strip()
+except IOError:
+    pass
+
+try:
+    with open(MACHINEID_FILE) as f:
+        data["machine-id"] = f.read().strip()
+except IOError:
+    pass
+
+print(json.dumps(data))
