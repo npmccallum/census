@@ -20,8 +20,13 @@ import json
 data = {}
 
 try:
-    with open("/etc/system-release-cpe") as f:
-        data["cpe"] = f.read().strip()
+    with open("/etc/os-release") as f:
+        for line in f.readlines():
+            line = line.strip()
+            (key, val) = line.split("=",1)
+            key = key.lower()
+            val = val.strip(' \t"')
+            data[key] = val
 except IOError:
     pass
 
