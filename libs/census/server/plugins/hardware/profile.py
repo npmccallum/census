@@ -15,19 +15,26 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import os
-import pymongo
-from census.server import Application
+import json
+import hashlib
 
-conn = pymongo.Connection(os.environ['OPENSHIFT_MONGODB_DB_HOST'],
-                          int(os.environ['OPENSHIFT_MONGODB_DB_PORT']))
-db = getattr(conn, os.environ['OPENSHIFT_APP_NAME'])
-rwcreds = (os.environ['OPENSHIFT_MONGODB_DB_USERNAME'],
-           os.environ['OPENSHIFT_MONGODB_DB_PASSWORD'])
-application = Application(db, rwcreds)
+def index(db):
+    db.hardware.profile.ensure_index("pci")
+    db.hardware.profile.ensure_index("usb")
+    
+def process(db, state, data):
+    # Get the PCI and USB IDs
+    pci = state.get("hardware.pci.ids", None)
+    usb = state.get("hardware.usb.ids", None)
+    if pci is None or usb is None:
+        return True
 
-if __name__ == '__main__':
-    from wsgiref.simple_server import make_server
-    httpd = make_server('localhost', 8051, application)
-    # Wait for a single request, serve it and quit.
-    httpd.handle_request()
+    # Generate the profile ID
+    id = json.dumps((sorted(pci), sorted(usb))).encode('utf-8')
+    id = hashlib.sha1(id).hexdigest()
+    
+    # Save the profile
+    profile = {'_id': id, 'usb': usb, 'pci': pci}
+    db.hardware.profile.save(profile)
+    
+    state["hardware.profile.id"] = profile['_id']

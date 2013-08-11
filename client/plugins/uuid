@@ -15,19 +15,32 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import json
 import os
-import pymongo
-from census.server import Application
+import uuid
+import sys
 
-conn = pymongo.Connection(os.environ['OPENSHIFT_MONGODB_DB_HOST'],
-                          int(os.environ['OPENSHIFT_MONGODB_DB_PORT']))
-db = getattr(conn, os.environ['OPENSHIFT_APP_NAME'])
-rwcreds = (os.environ['OPENSHIFT_MONGODB_DB_USERNAME'],
-           os.environ['OPENSHIFT_MONGODB_DB_PASSWORD'])
-application = Application(db, rwcreds)
+UUID_DIR = "/var/lib/census"
+UUID_FILE = os.path.join(UUID_DIR, "uuid")
 
-if __name__ == '__main__':
-    from wsgiref.simple_server import make_server
-    httpd = make_server('localhost', 8051, application)
-    # Wait for a single request, serve it and quit.
-    httpd.handle_request()
+if not os.path.isdir(UUID_DIR):
+    os.mkdir(UUID_DIR)
+    os.chown(UUID_DIR, 0, 0)
+    os.chmod(UUID_DIR, 0o700)
+
+try:
+    fd = os.open(UUID_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+    data = str(uuid.uuid4())
+    while True:
+        written = os.write(fd, data)
+        if written < 0:
+            sys.exit(1)
+        data = data[written:]
+        if not data:
+            break
+    os.close(fd)
+except OSError:
+    pass
+    
+with open(UUID_FILE) as f:
+    print(json.dumps({"uuid": f.read()}))

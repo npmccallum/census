@@ -15,19 +15,24 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import os
-import pymongo
-from census.server import Application
+import json
+import datetime
 
-conn = pymongo.Connection(os.environ['OPENSHIFT_MONGODB_DB_HOST'],
-                          int(os.environ['OPENSHIFT_MONGODB_DB_PORT']))
-db = getattr(conn, os.environ['OPENSHIFT_APP_NAME'])
-rwcreds = (os.environ['OPENSHIFT_MONGODB_DB_USERNAME'],
-           os.environ['OPENSHIFT_MONGODB_DB_PASSWORD'])
-application = Application(db, rwcreds)
+def index(db):
+    db.checkin.ensure_index("uuid")
+    db.checkin.ensure_index("time")
+    db.checkin.ensure_index("hardware")
+    
+def process(db, state, data):
+    hwp = state.get("hardware.profile.id", None)
+    if hwp is None:
+        return True
 
-if __name__ == '__main__':
-    from wsgiref.simple_server import make_server
-    httpd = make_server('localhost', 8051, application)
-    # Wait for a single request, serve it and quit.
-    httpd.handle_request()
+    uuid = data.get("uuid", None)
+    if uuid is None:
+        return False
+
+    checkin = {"uuid": uuid["uuid"],
+               "time": datetime.datetime.now(),
+               "hardware": hwp}
+    db.checkin.save(checkin)

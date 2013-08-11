@@ -1,0 +1,183 @@
+#!/usr/bin/env python
+#
+# Copyright 2012 Nathaniel McCallum
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+import argparse
+import ConfigParser
+import StringIO
+import glob
+import json
+import multiprocessing
+import os
+import re
+import subprocess
+import socket
+
+def _worker(object):
+    return object()
+
+class Plugin(object):
+    def __repr__(self):
+        return "<Plugin(%s)>" % self.name
+
+    def __hash__(self):
+        return hash(self.path)
+
+    def __eq__(self, other):
+        return hash(self) == hash(other)
+
+    def __init__(self, plugin):
+        self.path = os.path.abspath(plugin)
+        self.name = os.path.basename(plugin)
+
+    def __call__(self):
+        # Run the plugin
+        proc = subprocess.Popen([self.path], executable=self.path,
+                                stdout=subprocess.PIPE)
+        data = proc.stdout.read()
+        if proc.wait() != 0:
+            return None
+        
+        # Return the output
+        try:
+            return json.loads(data.decode("utf-8").strip())
+        except:
+            return None
+
+
+class PluginSet(object):
+    _ISVALID = re.compile("^[a-z]+(\.[a-z]+)*$").match
+    _MAXLEN = 80
+
+    def _load(self, *patterns):
+        plugins = set()
+        for pat in patterns:
+            plugs = map(Plugin, glob.glob(os.path.join(self.plugindir, pat)))
+            plugs = filter(lambda p: len(p.name) < self.__class__._MAXLEN, plugs)
+            plugs = filter(lambda p: self.__class__._ISVALID(p.name), plugs)
+            plugs = filter(lambda p: os.access(p.path, os.X_OK), plugs)
+            plugins.update(plugs)
+
+        return set(plugins)
+
+    def filter(self, include=[], exclude=[]):
+        includes = self._load(*include)
+        excludes = self._load(*exclude)
+        all = self._load("*")
+
+        # Load all the plugins
+        map(excludes.discard, includes)
+        map(all.discard, excludes)
+        self.plugins = frozenset(all)
+
+    def __init__(self, plugindir):
+        self.plugindir = plugindir
+        self.filter()
+
+    def __call__(self):
+        return {p.name: p() for p in self.plugins}
+
+    def close(self):
+        pass
+
+class ParallelPluginSet(PluginSet):
+    def __init__(self, plugindir, parallelism=None):
+        PluginSet.__init__(self, plugindir)
+
+        # Build our processing pool
+        if parallelism is None or parallelism < 1:
+            parallelism = multiprocessing.cpu_count()
+        parallelism = max(min(len(self.plugins), parallelism), 1)
+        self._pool = multiprocessing.Pool(parallelism)
+
+    def __call__(self):
+        plugins = tuple(self.plugins)
+
+        # Execute them in parallel and get the results
+        results = self._pool.map(_worker, plugins)
+
+        # Structure results according to plugin name
+        data = {}
+        for i in range(len(plugins)):
+            if isinstance(results[i], (list, tuple, dict)):
+                data[plugins[i].name] = results[i]
+        
+        return data
+
+    def close(self):
+        self._pool.close()
+
+
+if __name__ == '__main__':
+    import httplib
+    import urlparse
+    import sys
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-c', '--config', help='Configuration file', nargs="*", default="/etc/census.conf")
+    parser.add_argument('-e', '--exclude', help='Do not run plugin (glob matching)', nargs="*")
+    parser.add_argument('-i', '--include', help='Run plugin (glob matching)', nargs="*")
+    args = parser.parse_args()
+
+    cp = ConfigParser.ConfigParser(allow_no_value=True)
+    cp.read(args.config)
+    if not cp.sections():
+        cp.readfp(StringIO.StringIO("[http://localhost:8051/]"))
+
+    rval = 0
+    psets = {}
+    for url in cp.sections():
+        # Get the config values
+        vals = dict(cp.items(url))
+        plugins = vals.get('plugins', 'plugins')
+        include = vals.get('include', '').split(',')
+        exclude = vals.get('exclude', '').split(',')
+        parallelism = int(vals.get('parallelism', 0))
+
+        # Process the includes/excludes
+        include = filter(lambda s: s, map(lambda s: s.strip(), include))
+        exclude = filter(lambda s: s, map(lambda s: s.strip(), exclude))
+        if args.include:
+            include += args.include
+        if args.exclude:
+            exclude += args.exclude
+
+        # Create one PluginSet per plugin directory
+        if not psets.has_key(plugins):
+            psets[plugins] = ParallelPluginSet(plugins, parallelism)
+
+        # Filter out which plugins we want and call them
+        psets[plugins].filter(include, exclude)
+        data = psets[plugins]()
+        print data
+
+        # Submit the data
+        try:
+            parse = urlparse.urlsplit(url)
+            conn = httplib.HTTPConnection(parse.netloc)
+            conn.request("PUT", parse.path, json.dumps(data),
+                         {"Content-Type": "application/json"})
+            conn.getresponse()
+        except socket.error:
+            print >>sys.stderr, "Unable to connect to %s" % url
+            rval = 1
+            continue
+
+    # Cleanup
+    for pps in psets.values():
+        pps.close()
+
+    sys.exit(rval)

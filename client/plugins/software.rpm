@@ -15,19 +15,28 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import json
 import os
-import pymongo
-from census.server import Application
+import sys
 
-conn = pymongo.Connection(os.environ['OPENSHIFT_MONGODB_DB_HOST'],
-                          int(os.environ['OPENSHIFT_MONGODB_DB_PORT']))
-db = getattr(conn, os.environ['OPENSHIFT_APP_NAME'])
-rwcreds = (os.environ['OPENSHIFT_MONGODB_DB_USERNAME'],
-           os.environ['OPENSHIFT_MONGODB_DB_PASSWORD'])
-application = Application(db, rwcreds)
+data = {}
 
-if __name__ == '__main__':
-    from wsgiref.simple_server import make_server
-    httpd = make_server('localhost', 8051, application)
-    # Wait for a single request, serve it and quit.
-    httpd.handle_request()
+try:
+    with os.popen("which rpm 2>/dev/null") as f:
+        rpm = f.read().strip()
+    
+    with os.popen("%s -qa" % rpm) as f:
+        for line in f:
+            line = line.strip()
+            try:
+                # Epoch?
+                name, tag, arch = line.rsplit('.', 2)
+                name, ver, rel = name.rsplit('-', 2)
+                data[name] = [ver, rel, tag, arch]
+            except ValueError:
+                continue
+except IOError:
+    pass
+
+sys.stdout.write(json.dumps(data))
+sys.stdout.flush()

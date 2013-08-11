@@ -15,19 +15,14 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import os
-import pymongo
-from census.server import Application
+import json
 
-conn = pymongo.Connection(os.environ['OPENSHIFT_MONGODB_DB_HOST'],
-                          int(os.environ['OPENSHIFT_MONGODB_DB_PORT']))
-db = getattr(conn, os.environ['OPENSHIFT_APP_NAME'])
-rwcreds = (os.environ['OPENSHIFT_MONGODB_DB_USERNAME'],
-           os.environ['OPENSHIFT_MONGODB_DB_PASSWORD'])
-application = Application(db, rwcreds)
+data = {}
 
-if __name__ == '__main__':
-    from wsgiref.simple_server import make_server
-    httpd = make_server('localhost', 8051, application)
-    # Wait for a single request, serve it and quit.
-    httpd.handle_request()
+try:
+    with open("/etc/system-release-cpe") as f:
+        data["cpe"] = f.read().strip()
+except IOError:
+    pass
+
+print(json.dumps(data))

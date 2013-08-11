@@ -1,0 +1,167 @@
+<html>
+<head>
+<meta charset="UTF-8"> 
+ 
+<style type="text/css">
+table, form, .CodeMirror {
+  width: 96%;
+  margin-left: 2%; margin-right: 2%;
+  margin-top: 5px; margin-bottom: 5px;
+}
+
+th, td {
+  border: 1px solid black;
+  padding: 5px;
+}
+
+.CodeMirror {
+  border: 1px solid black;
+  font-size: 16px;
+}
+</style>
+
+<script src="codemirror-3.15/lib/codemirror.js"></script>
+<link rel="stylesheet" href="codemirror-3.15/lib/codemirror.css">
+<script src="codemirror-3.15/mode/javascript/javascript.js"></script>
+
+<script type="text/javascript"
+        src="http://ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js">
+</script>
+<script type="text/javascript">
+function isArray(x) {
+  return typeof x == "object" && typeof x.length == "number";
+}
+
+function getObjectValue(obj) {
+  if (typeof obj != "object")
+    return obj;
+  
+  if (typeof obj['$oid'] == "string")
+    return obj['$oid']
+
+  if (typeof obj['$date'] == "number")
+    return new Date(obj['$date'] * 1000);
+  
+  if (typeof obj.forEach == "function") {
+    var tmp = "";
+    obj.forEach(function(item) {
+      if (tmp != "")
+        tmp += "<br/>";
+      tmp += getObjectValue(item);
+    });
+    return tmp;
+  }
+  
+  return obj;
+}
+
+function getSortedProperties(obj) {
+  var tmp = [];
+
+  for (var prop in obj) {
+     if (typeof obj[prop] == "undefined")
+       continue;
+     tmp.push(prop);
+  }
+
+  tmp.sort();
+  return tmp;
+}
+
+function getPropertyValues(obj, props) {
+  var values = []
+
+  props.forEach(function(prop) {
+    values.push(getObjectValue(obj[prop]));
+  });
+
+  return values;
+}
+
+function onData(data, textStatus, jqXHR) {
+  var table, trow, tdata, tmp, header = true;
+  
+  $("#error").hide();
+  
+  table = $("<table/>");
+  
+  if (typeof data == "object") {
+    if (typeof data.length != "number") {
+      tmp = [getSortedProperties(data)];
+      tmp.push(getPropertyValues(data, tmp[0]));
+      data = tmp;
+    } else {
+      if (typeof data[0] == "object") {
+        if (typeof data[0].length != "number") {
+          tmp = [];
+          tmp.push(getSortedProperties(data[0]));
+          data.forEach(function(row) {
+            tmp.push(getPropertyValues(row, tmp[0]));
+          });
+          data = tmp;
+        }
+      } else {
+        tmp = [];
+        data.forEach(function(row) {
+          tmp.push([row]);      
+        });
+        data = tmp;
+      }
+    }
+
+    data.forEach(function(row) {
+      trow = $("<tr/>")
+      row.forEach(function(item) {
+        tdata = header ? $("<th/>") : $("<td/>");
+        tdata.append(item);
+        trow.append(tdata);
+      });
+          
+      header = false;
+      table.append(trow);
+    });
+    
+  /* Other... */
+  } else {
+    table = data;
+  }
+  
+  $("#results").empty();
+  $("#results").append(table);
+}
+
+var cm;
+function onSubmit() {
+  var func, args;
+  
+  func = "function("
+           + document.forms["query"]["names"].value + ") {"
+           + cm.getValue() + "}";
+
+           
+  args = "[" + document.forms["query"]["args"].value + "]";
+  $.post("#", {"func": func, "args": args}, onData);
+}
+
+$(document).ready(function(){
+  $("#error").hide();
+  $("#error").ajaxError(function() { $(this).show(); });
+  cm = CodeMirror.fromTextArea($("#fbody")[0], {
+    leaveSubmitMethodAlone: true,
+    lineNumbers: true
+  });
+});
+</script>
+</head>
+<body>
+<form name="query" onSubmit="onSubmit(); return false;">
+  (function (<input width="100" type="text" name="names"/>) {
+    <textarea id="fbody" rows="20" name="fbody"></textarea>
+  }).apply(undefined, [<input type="text" name="args"/>])
+  <input type="submit" value="Query">
+  <span id="error">Error!</span>
+  <br/><br/><br/>
+  <div id="results" />
+</form>
+</body>
+</html>

@@ -15,19 +15,21 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import json
 import os
-import pymongo
-from census.server import Application
 
-conn = pymongo.Connection(os.environ['OPENSHIFT_MONGODB_DB_HOST'],
-                          int(os.environ['OPENSHIFT_MONGODB_DB_PORT']))
-db = getattr(conn, os.environ['OPENSHIFT_APP_NAME'])
-rwcreds = (os.environ['OPENSHIFT_MONGODB_DB_USERNAME'],
-           os.environ['OPENSHIFT_MONGODB_DB_PASSWORD'])
-application = Application(db, rwcreds)
+devices = []
+for dir in os.listdir('/sys/bus/pci/devices'):
+  d = os.path.join('/sys/bus/pci/devices', dir)
+  
+  device = {}
+  device['vendor']   = int(open(os.path.join(d, 'vendor')).read(), 16)
+  device['device']   = int(open(os.path.join(d, 'device')).read(), 16)
+  device['subvnd']   = int(open(os.path.join(d, 'subsystem_vendor')).read(), 16)
+  device['subdev']   = int(open(os.path.join(d, 'subsystem_device')).read(), 16)
+  device['class']    = int(open(os.path.join(d, 'class')).read(), 16)
+  
+  devices.append(device)
 
-if __name__ == '__main__':
-    from wsgiref.simple_server import make_server
-    httpd = make_server('localhost', 8051, application)
-    # Wait for a single request, serve it and quit.
-    httpd.handle_request()
+print(json.dumps(devices))
+

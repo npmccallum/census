@@ -1,0 +1,3 @@
+RewriteEngine On
+RewriteCond %{REQUEST_METHOD} ^GET$
+RewriteRule ^application/(.*)$ /static/$1 [L]
