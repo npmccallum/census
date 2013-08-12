@@ -162,7 +162,6 @@ if __name__ == '__main__':
         # Filter out which plugins we want and call them
         psets[plugins].filter(include, exclude)
         data = psets[plugins]()
-        print data
 
         # Submit the data
         try:
