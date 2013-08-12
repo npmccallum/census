@@ -25,11 +25,15 @@ try:
     ts = rpm.TransactionSet()
     mi = ts.dbMatch()
     for h in mi:
-        nevra = "%s-%s:%s-%s.%s" % (h['name'], h['epoch'], h['version'], h['release'], h['arch'])
-        entry = {}
-        for key in ['name','epoch','version','release','arch']:
-            entry[key] = h[key]
-        data[nevra] = entry
+        e = {}
+        for key in ['name', 'epoch', 'version', 'release', 'arch']:
+            e[key] = h[key]
+
+        e['epoch'] = 0 if e['epoch'] is None else e['epoch']
+        nevra = "{name}-{epoch}:{version}-{release}.{arch}".format(**e)
+        e['arch'] = e['arch'] if e['arch'] != 'noarch' else None
+
+        data[nevra] = e
 except IOError:
     pass
 
